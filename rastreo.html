@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificación de Activo - MOTO GALERÍA</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #f1f5f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 100%;
+            overflow: hidden;
+            text-align: center;
+        }
+        .header {
+            background-color: #1e293b;
+            color: #ffffff;
+            padding: 20px;
+        }
+        .header h1 {
+            font-size: 1.2rem;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 0.9rem;
+            color: #fbbf24;
+            font-weight: bold;
+        }
+        .content {
+            padding: 25px 20px;
+        }
+        .status-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+        .btn {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 15px;
+            width: 100%;
+            transition: background 0.3s;
+        }
+        .btn:hover {
+            background-color: #1d4ed8;
+        }
+        .input-resp {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            text-align: center;
+        }
+        .footer {
+            font-size: 0.75rem;
+            color: #64748b;
+            padding: 15px;
+            border-top: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="header">
+        <h1>MOTO GALERÍA</h1>
+        <p>ACTIVO: <span id="lblIdActivo">CARGANDO...</span></p>
+        <p style="color: #ffffff; font-size: 0.85rem; margin-top: 4px;" id="lblObjeto"></p>
+    </div>
+    <div class="content">
+        <div id="icon" class="status-icon">📦</div>
+        <h2 id="titulo">Verificación de Inventario</h2>
+        <p id="mensaje" style="margin-top: 10px; color: #475569; font-size: 0.95rem;">
+            Confirma la recepción del activo para registrar la ubicación en la base de datos.
+        </p>
+        
+        <input type="text" id="txtResponsable" class="input-resp" placeholder="Nombre del Responsable" style="display:none;">
+
+        <button id="btnSolicitar" class="btn" onclick="iniciarProceso()">Confirmar Activo</button>
+    </div>
+    <div class="footer">
+        Sistema de Control de Inventario & Garantías
+    </div>
+</div>
+
+<script>
+    const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyt93By05xY4VzGSOiPiwGXPicipUuU6QkAmqyMUq0p4yF6ZVM4cI-0w67iWNcn6nad/exec";
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const idActivo = urlParams.get('id') || 'DESCONOCIDO';
+    let nombreResp = urlParams.get('resp') || '';
+    const nombreObjeto = urlParams.get('obj') || 'NO ESPECIFICADO';
+
+    document.getElementById('lblIdActivo').innerText = idActivo;
+    document.getElementById('lblObjeto').innerText = nombreObjeto !== 'NO ESPECIFICADO' ? `Equipo: ${nombreObjeto}` : '';
+
+    if (!nombreResp) {
+        document.getElementById('txtResponsable').style.display = 'block';
+    } else {
+        document.getElementById('txtResponsable').value = nombreResp;
+    }
+
+    function iniciarProceso() {
+        const btn = document.getElementById('btnSolicitar');
+        const mensaje = document.getElementById('mensaje');
+        const titulo = document.getElementById('titulo');
+        const icon = document.getElementById('icon');
+        const inputResp = document.getElementById('txtResponsable');
+
+        nombreResp = nombreResp || inputResp.value.trim() || 'NO ESPECIFICADO';
+
+        btn.disabled = true;
+        btn.innerText = "Procesando...";
+
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+
+                    guardarEnGoogleSheets(idActivo, nombreObjeto, nombreResp, mapsUrl);
+
+                    icon.innerText = "✅";
+                    titulo.innerText = "Activo Verificado";
+                    mensaje.innerText = "El activo y su ubicación se registraron correctamente.";
+                    inputResp.style.display = "none";
+                    btn.style.display = "none";
+                },
+                function(error) {
+                    obtenerUbicacionPorIP();
+
+                    icon.innerText = "✅";
+                    titulo.innerText = "Activo Verificado";
+                    mensaje.innerText = "El activo ha sido registrado correctamente.";
+                    inputResp.style.display = "none";
+                    btn.style.display = "none";
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        } else {
+            obtenerUbicacionPorIP();
+        }
+    }
+
+    function guardarEnGoogleSheets(id, objeto, responsable, mapa) {
+        const payload = {
+            id_activo: id,
+            objeto: objeto,
+            responsable: responsable,
+            mapa: mapa
+        };
+
+        fetch(WEBHOOK_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+        }).catch(err => console.log("Error al enviar:", err));
+    }
+
+    function obtenerUbicacionPorIP() {
+        fetch('https://ipapi.co/json/')
+            .then(res => res.json())
+            .then(data => {
+                const mapsUrl = `https://www.google.com/maps?q=${data.latitude},${data.longitude}`;
+                guardarEnGoogleSheets(idActivo, nombreObjeto, nombreResp, mapsUrl);
+            })
+            .catch(err => {
+                guardarEnGoogleSheets(idActivo, nombreObjeto, nombreResp, "Ubicación no disponible");
+            });
+    }
+</script>
+
+</body>
+</html>
